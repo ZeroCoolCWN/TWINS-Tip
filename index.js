@@ -91,7 +91,7 @@ mynode rm <address>: : Remove your registered masternnode address from discord s
     else if(command === 'tip' && args[0] === 'deposit')
     {
         var depositAmount = parseFloat(args[1]);
-        if(isNaN(depositAmount))
+        if(isNaN(depositAmount) || depositAmount <= 0)
         {
             return;
         }
@@ -99,24 +99,28 @@ mynode rm <address>: : Remove your registered masternnode address from discord s
             discord_id: message.author.id.toString(), 
             balance: 0,
         };
-        connection.query('INSERT IGNORE INTO users SET ?', newUser, function(error1, result1, fields1){
-            getNewAddress(message.author.id, function(walletAddress){
-                var newDeposit = {
-                    discord_id: message.author.id.toString(), 
-                    wallet_address: walletAddress, 
-                    anticipated_amount: depositAmount, 
-                    deposit: 0, 
-                    timestamp: Date.now(), 
-                };
-                connection.query('INSERT INTO deposits SET ?', newDeposit, function (error2, result2, fields2){
-                    if (error2) throw error2;
-                    message.channel.send(`${message.author.toString()}, Please deposit exactly ${args[1]} TWINS to ${walletAddress} within 60 minutes. Please deposit EXACTLY ${args[1]} TWINS otherwise your deposit will be invalid, and you will lose your coins!`);
-                    message.channel.send(`${message.author.toString()}, Please wait 1-5 minutes after your deposit for your balance to update`);
+        connection.query('INSERT IGNORE INTO users SET ?', newUser, function(error, result, fields){
+            if( !error )
+            {
+                getNewAddress(message.author.id, function(walletAddress){
+                    var newDeposit = {
+                        discord_id: message.author.id.toString(), 
+                        wallet_address: walletAddress, 
+                        anticipated_amount: depositAmount, 
+                        deposit: 0, 
+                        timestamp: Date.now(), 
+                    };
+                    connection.query('INSERT INTO deposits SET ?', newDeposit, function (error2, result2, fields2){
+                        if ( !error2 )
+                        {
+                            message.channel.send(`${message.author.toString()}, Please deposit exactly ${args[1]} TWINS to ${walletAddress} within 60 minutes. Please deposit EXACTLY ${args[1]} TWINS otherwise your deposit will be invalid, and you will lose your coins!`);
+                            message.channel.send(`${message.author.toString()}, Please wait 1-5 minutes after your deposit for your balance to update`);
+                        }
+                    });
                 });
-            });
+            }
         });        
     }
-
 
 
     else if(command === 'tip' && args[1] === 'to')
@@ -125,7 +129,7 @@ mynode rm <address>: : Remove your registered masternnode address from discord s
             if(!error && result && result.length >= 0)
             {
                 var tipAmount = parseFloat(args[0]);
-                if(tipAmount > result[0].balance)
+                if(isNaN(tipAmount) || tipAmount > result[0].balance)
                 {
                     message.channel.send('Sorry!, You don\'t have enough balance to fund this!')
                     return;
@@ -160,23 +164,44 @@ mynode rm <address>: : Remove your registered masternnode address from discord s
 
     else if(command === 'tip' && args[0] === 'balance')
     {
-        message.channel.send('Your balance has been sent to you');
         connection.query('SELECT balance FROM users where discord_id = ?', [message.author.id], function(error, result, fields){
-            message.author.send(`Your current balance: ${result[0].balance} TWINS`)
+            if(typeof result != undefined && result.length > 0)
+            {
+                message.channel.send('Your balance has been sent to you');
+                message.author.send(`Your current balance: ${result[0].balance} TWINS`);
+            }
+            else
+            {
+                message.channel.send('You must deposit or receive a tip to have a balance');
+            } 
         });
     }
 
 
     else if(command === 'tip' && args[0] === 'withdraw')
     {
-        var requestedAmount = parseFloat(args[1]);
-        connection.query('SELECT * FROM users where discord_id ?', [message.author.id.toString()], function(error, result, fields){
-            if(result && result[0].balance >= requestedAmount)
+        connection.query('SELECT * FROM users where discord_id = ?', [message.author.id.toString()], function(error, result, fields){
+            if(typeof result != undefined && result.length > 0)
             {
-                withdrawFund(requestedAmount, function(status){
+                var newWithdraw = {
+                    discord_id: message.author.id.toString(), 
+                    amount: result[0].balance, 
+                    timestamp: Date.now()
+                }
+                withdrawFund(result[0].balance, args[1], function(status){
                     if(status.status === 'success')
                     {
-                        message.channel.send(`Your funds has been successfully withdrawn from your Discord wallet`);
+                        connection.query('UPDATE users set balance = 0 where discord_id = ?', [message.author.id.toString()], function(error1, result1, fields1){
+                            if(!error1)
+                            {
+                                connection.query('INSERT INTO withdraws set ?', [newWithdraw], function(error2, result2, fields2){
+                                    if(!error2)
+                                    {
+                                        message.channel.send(`Your funds has been successfully withdrawn from your Discord wallet`);
+                                    }
+                                });
+                            }
+                        }); 
                     }
                 });
             }
@@ -254,11 +279,17 @@ function getNewAddress(userid, callback)
     );
 }
 
-function withdrawFund(amount, callback) 
+function withdrawFund(amount, sendToAddress,callback) 
 {
-    callback({
-        status: 'success', 
-    });
+    cmd.get(
+        `cd twins/Twins-windows/daemon && twins-cli sendtoaddress ${sendToAddress} ${amount}`,
+        function(err, data, stderr){
+            console.log(err, data, stderr);
+            callback({
+                status: 'success', 
+            });
+        }
+    );
 }
 
 function mnstats(addr, callback){
