@@ -7,7 +7,7 @@ TWINS Cryptocurrency Discord Tipping and MN Stats Bot
 			<li>+tip balance::  Displays your current balance<b>[Working]</b></li>
 			<li>+rain:: Randomly awards currency to active people in the server <b>[Under Development]</b></li>
 			<li>+tip <amnt> to <user>::  Tip someone through the Discord Bot<b>[Working]</b></li>
-			<li>+tip withdraw::  Allows you to withdraw currency to any compatible address you want - Be sure to write your address correctly, 				otherwise you'll lose your funds<b>[Under Development]</b></li>
+			<li>+tip withdraw::  Allows you to withdraw currency to any compatible address you want - Be sure to write your address correctly, 				otherwise you'll lose your funds<b>[Working]</b></li>
 </ul>
 
 <h2>Masternode Monitoring:</h2>
