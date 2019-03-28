@@ -1,8 +1,9 @@
-const Discord  = require("discord.js");
-const client   = new Discord.Client();
-const https    = require('https');
+const Discord   = require("discord.js");
+const client    = new Discord.Client();
+const https     = require('https');
 
-const config   = require("./config.json");
+const config    = require('./config.json');
+const constants = require('./constants.json');
 
 var cmd        = require('node-cmd');
 var mysql      = require('mysql');
@@ -49,25 +50,21 @@ tip deposit <amnt>:: Deposit currency into your discord wallet
 
 tip balance:: Displays your current balance
 
-rain:: Randomly awards currency to active people in the server
-
 tip <amnt> to <user>:: Tip someone through the Discord Bot
 
-tip withdraw <address>:: Allows you to withdraw currency to any compatible address you want - Be sure to write your address correctly, otherwise you'll lose your funds!
+tip withdraw <address>:: Allows you to withdraw currency to any compatible address you want - Be sure to write your address correctly, otherwise you'll lose your funds!(current withdraw fees 0.01 TWINS)
 
 help:: Returns the help page.
 
-rules:: Get all the rules of a server
+netstats:: Display current network stats
 
-netstats: :  Display current network stats
+mnstats <address>:: Display masternode stats of the given address
 
-mnstats <address>: :  Display masternode stats of the given address
+mynode reg <address>:: Register your masternode address for personal notification upon downtime
 
-mynode reg <address>: :   Register your masternode address for personal notification upon downtime
+mynode:: Get DM about your master node stats
 
-mynode: :  Get DM about your master node stats
-
-mynode rm <address>: : Remove your registered masternnode address from discord server\`\`\``;
+mynode rm <address>:: Remove your registered masternnode address from discord server\`\`\``;
 
     if(command === 'ping')
     {
@@ -113,7 +110,7 @@ mynode rm <address>: : Remove your registered masternnode address from discord s
                     connection.query('INSERT INTO deposits SET ?', newDeposit, function (error2, result2, fields2){
                         if ( !error2 )
                         {
-                            message.channel.send(`${message.author.toString()}, Please deposit exactly ${args[1]} TWINS to ${walletAddress} within 60 minutes. Please deposit EXACTLY ${args[1]} TWINS otherwise your deposit will be invalid, and you will lose your coins!`);
+                            message.channel.send(`${message.author.toString()}, Please deposit exactly ${args[1]} TWINS to ${walletAddress} within 20 minutes. Please deposit EXACTLY ${args[1]} TWINS otherwise your deposit will be invalid, and you will lose your coins!`);
                             message.channel.send(`${message.author.toString()}, Please wait 1-5 minutes after your deposit for your balance to update`);
                         }
                     });
@@ -188,22 +185,38 @@ mynode rm <address>: : Remove your registered masternnode address from discord s
                     amount: result[0].balance, 
                     timestamp: Date.now()
                 }
-                withdrawFund(result[0].balance, args[1], function(status){
-                    if(status.status === 'success')
+                
+                if(result[0].balance > 0) 
+                {
+                    var amountToSend = result[0].balance - constants.withdraw_fees;
+                    if(amountToSend > 0)
                     {
-                        connection.query('UPDATE users set balance = 0 where discord_id = ?', [message.author.id.toString()], function(error1, result1, fields1){
-                            if(!error1)
+                        withdrawFund(amountToSend, args[1], function(status){
+                            if(status.status === 'success')
                             {
-                                connection.query('INSERT INTO withdraws set ?', [newWithdraw], function(error2, result2, fields2){
-                                    if(!error2)
+                                connection.query('UPDATE users set balance = 0 where discord_id = ?', [message.author.id.toString()], function(error1, result1, fields1){
+                                    if(!error1)
                                     {
-                                        message.channel.send(`Your funds has been successfully withdrawn from your Discord wallet`);
+                                        connection.query('INSERT INTO withdraw SET ?', [newWithdraw], function(error2, result2, fields2){
+                                            if(!error2)
+                                            {
+                                                message.channel.send(`Your funds has been successfully withdrawn from your Discord wallet`);
+                                            }
+                                        });
                                     }
-                                });
+                                }); 
                             }
-                        }); 
+                        });
                     }
-                });
+                    else
+                    {
+                        message.channel.send('Your balance is too low to withdraw')
+                    }
+                }
+                else
+                {
+                    message.channel.send(`Sorry!, There is no funds left in your discord balance to withdraw.`);
+                }
             }
             else
             {
@@ -215,42 +228,141 @@ mynode rm <address>: : Remove your registered masternnode address from discord s
 
     else if(command === 'mnstats')
     {
-        mnstats(args[0], function(stats){
-            if(stats.err)
+        mnstats([{addr: args[0]}], function(stats){
+            if(stats.length == 0)
             {
-                message.channel.send(stats.err);
+                message.channel.send('Unknown address');
             }
             else
             {
-                var lastSeen = new Date(stats.lastseen * 1000), lastpaid = new Date(stats.lastpaid * 1000);
-
-                lastSeen = lastSeen.getDate() + '/' + (lastSeen.getMonth() + 1) + '/' + lastSeen.getFullYear();
-                lastpaid = lastpaid.getDate() + '/' + (lastpaid.getMonth() + 1) + '/' + lastpaid.getFullYear();
-
-                stats = `\`\`\`
-Status: ${stats.status} 
-Address: ${stats.addr} 
-version: ${stats.version} 
-Lastseen: ${lastSeen} 
-IP Address: ${stats.ipaddr} 
-Active time: ${(stats.activetime/1000/60).toFixed(2)} hrs 
-Last paid: ${lastpaid} 
-                \`\`\``;
-
-                message.channel.send(stats);
+                message.channel.send(mnstatsMessage(stats[0]));
             }
-        })
+        });
     }
+
+
+    else if(command == 'netstats')
+    {
+        connection.query('SELECT * FROM net_stats', function(error, result, fields) {
+            netstats = result[0]
+            message.channel.send(`\`\`\`
+Difficulty: ${netstats.difficulty} 
+Masternodes Count: ${netstats.masternodecount} 
+Block Count: ${netstats.blockcount} 
+NetworK Hash: ${(netstats.networkhashps / Math.pow(1000, 3)).toFixed(4)} GH/s
+Active wallets count: ${netstats.activewalletscount} 
+Supply: ${netstats.moneysupply} TWINS
+                            \`\`\``);
+        });
+    }
+
+
+    else if(command === 'mynode')
+    {
+        if(args[0] === 'reg')
+        {
+            mnstats([{addr: args[1]}], function(stats) {
+                if(stats.length == 0)
+                {
+                    message.channel.send('It seems like your Masternode is offline(turn it on and try again) or the address is invalid. ');
+                }
+                else
+                {
+                    stats = {
+                        rank: stats[0].rank,
+                        network: stats[0].network, 
+                        status: stats[0].status,
+                        addr: stats[0].addr,
+                        version: stats[0].version,
+                        lastseen: stats[0].lastseen,
+                        ipaddr: stats[0].ipaddr,
+                        activetime: stats[0].activetime,
+                        lastpaid: stats[0].lastpaid,
+                        discord_id: message.author.id.toString()
+                    };
+        
+                    console.log(stats);
+        
+                    connection.query('INSERT IGNORE INTO registered_mns SET ?', [stats], function(error, result, fields) {
+                        console.log(error);
+                        message.channel.send('Your Masternode has been registered successfully for discord notifications');
+                    });
+                }
+            });
+        }
+
+        else if(args[0] === 'rm')
+        {
+            connection.query('DELETE FROM registered_mns WHERE discord_id = ? AND addr = ?', [message.author.id.toString(), args[1]], function(error, result, fields) {
+                if(!error && result && result.affectedRows > 0)
+                {
+                    message.channel.send('The requested Masternode has been removed and you will not receive any personal notifications. ');
+                }
+                else if(error)
+                {
+                    message.channel.send('Unexpected error occured. Please try again later');
+                }
+                else
+                {
+                    message.channel.send('It seems like something is not right with your request. ');
+                }
+            });
+        }
+
+        else if(args.length == 0)
+        {
+            connection.query('SELECT * FROM registered_mns WHERE discord_id = ?', [message.author.id.toString()], function(error, result, fields) {
+                if(!error && result.length > 0)
+                {
+                    mnstats(result, function(stats) {
+                        if(stats.length == 0)
+                        {
+                            console.log(stats);
+                        }
+
+                        message.channel.send('Your MN vitals have been sent to you');
+
+                        var statsToPutInDB = [];
+                        
+                        for(var i = 0; i < stats.length; i++)
+                        {
+                            
+                            statsToPutInDB.push({
+                                rank: stats[i].rank,
+                                network: stats[i].network, 
+                                status: stats[i].status,
+                                addr: stats[i].addr,
+                                version: stats[i].version,
+                                lastseen: stats[i].lastseen,
+                                ipaddr: stats[i].ipaddr,
+                                activetime: stats[i].activetime,
+                                lastpaid: stats[i].lastpaid,
+                                discord_id: message.author.id.toString()
+                            });
+
+                            message.author.send(mnstatsMessage(statsToPutInDB[i]));
+
+                            connection.query('UPDATE registered_mns SET ? WHERE discord_id = ?', [statsToPutInDB[i], statsToPutInDB[i].discord_id], function(error, result, fields) {
+                                console.log('query happened');
+                            });
+                        }
+                    });
+                }
+            });
+        } 
+    } 
 });
 
 client.login(config.token);
+
+netstats();
 
 setInterval(function(){
     connection.query('SELECT * FROM deposits WHERE deposit = ?', [0],function(error, result, fields){
         for(var i = 0; i < result.length; i++)
         {
             var curDeposit = result[i];
-            getRequest(`https://explorer.win.win/ext/getaddress/${result[i].wallet_address}`, function(data){
+            getRequest(`https://explorer.win.win/ext/getaddress/${result[i].wallet_address}`, 0, function(data, key = 0){
                 data = JSON.parse(data);
                 if(data.error && data.error === 'address not found.')
                 {
@@ -268,6 +380,57 @@ setInterval(function(){
     });
     
 }, 5000)
+
+setInterval(function() {
+    var addrs = [];
+    getRequest('https://explorer.win.win/api/listmasternodes', 0, function(data, key) {
+        data = JSON.parse(data);
+        for(var i = 0; i < data.length; i++)
+        {
+            addrs.push(data[i].addr);
+        }
+
+        connection.query('SELECT * FROM registered_mns WHERE addr NOT IN (?) AND notified = 0', [addrs], function(error, result, fields) {
+            for(var i = 0; i < result.length; i++)
+            {
+                client.users.get(result[i].discord_id).send('Your MN went offline just a while ago!!')
+            }
+            connection.query('UPDATE registered_mns SET is_online = 0, notified = 1 WHERE addr NOT IN (?) AND notified = 0', [addrs], function(error1, result1, fields1) {
+
+            });
+        });
+
+        connection.query('UPDATE registered_mns SET is_online = 1, notified = 0 WHERE addr IN (?) AND is_online = 0', [addrs], function(error, result, fields) {
+
+        });
+    });
+}, 5000);
+
+setInterval(function() {
+    connection.query(`DELETE FROM deposits WHERE deposit = 0 AND timestamp <= ${Date.now() - constants.deposit_time_limit}`, [], function(err, res, fields) {
+        console.log(err, res, fields);
+    })
+}, 60000)
+
+function mnstatsMessage(stats)
+{
+    var lastSeen = new Date(stats.lastseen * 1000), lastpaid = new Date(stats.lastpaid * 1000);
+
+    lastSeen = lastSeen.getDate() + '/' + (lastSeen.getMonth() + 1) + '/' + lastSeen.getFullYear();
+    lastpaid = lastpaid.getDate() + '/' + (lastpaid.getMonth() + 1) + '/' + lastpaid.getFullYear();
+
+    stats = `\`\`\`
+Status: ${stats.status} 
+Address: ${stats.addr} 
+version: ${stats.version} 
+Lastseen: ${lastSeen} 
+IP Address: ${stats.ipaddr} 
+Active time: ${(stats.activetime/1000/60).toFixed(2)} hrs 
+Last paid: ${lastpaid} 
+                \`\`\``;
+
+    return stats;
+}
 
 function getNewAddress(userid, callback)
 {
@@ -292,25 +455,92 @@ function withdrawFund(amount, sendToAddress,callback)
     );
 }
 
-function mnstats(addr, callback){
-    getRequest('https://explorer.win.win/api/listmasternodes', function(data) {
-        data = data.replace(/([A-Za-z0-9_]+): /g, `"$1": `);
-        data = JSON.parse(data);
-        for(var i = 0; i < data.length; i++)
-        {
-            if(data[i].addr === addr)
+function netstats()
+{
+    var urls = {
+        difficulty: "https://explorer.win.win/api/getdifficulty", 
+        masternodecount: "https://explorer.win.win/api/getmasternodecount", 
+        blockcount: "https://explorer.win.win/api/getblockcount", 
+        networkhashps: "https://explorer.win.win/api/getnetworkhashps", 
+        activewalletscount: "https://explorer.win.win/ext/getactivewalletscount", 
+        moneysupply: "https://explorer.win.win/ext/getmoneysupply", 
+    };
+
+    var netstats = {
+        difficulty: "", 
+        masternodecount: "",  
+        blockcount: "", 
+        networkhashps: "",  
+        activewalletscount: "", 
+        moneysupply: "", 
+    };
+    var completed_requests = 0;
+
+    for(var key in urls)
+    {
+        getRequest(urls[key], key, function(data, key_name) {
+
+            completed_requests++;
+
+            if(key_name === 'blockcount' || key_name === 'networkhashps')
             {
-                callback(data[i]);
-                return;
+                netstats[key_name] = parseInt(data);
+            }
+            else if(key_name === 'difficulty' || key_name === 'moneysupply')
+            {
+                netstats[key_name] = parseFloat(data);
+            }
+            else
+            {
+                data = JSON.parse(data);
+                if(key_name === 'activewalletscount')
+                {
+                    netstats[key_name] = data.active_wallets_count;
+                }
+                else
+                {
+                    netstats[key_name] = data.total;
+                }
+            }
+            
+            if(completed_requests == 6)
+            {
+                connection.query('UPDATE net_stats SET ?', [netstats], function(error, result, fields) {
+                });
+            }
+        });
+    }
+}
+
+function mnstats(addresses, callback){
+    getRequest('https://explorer.win.win/api/listmasternodes', 0, function(data, key = 0) {
+
+        /* data = data.replace(/([A-Za-z0-9_]+): /g, `"$1": `);  */ // Handy when the JSON.parse throws an error
+
+        data = JSON.parse(data);
+
+        var stats = [];
+
+        for(var i = 0; i < addresses.length; i++)
+        {
+            for(var j = 0; j < data.length; j++)
+            {
+                if(addresses[i].addr == data[j].addr)
+                {
+                    stats.push(data[j]);
+                    if(stats.length == addresses.length)
+                    {
+                        callback(stats);
+                        return;
+                    }
+                }
             }
         }
-        callback({
-            err: "unknown address"
-        });
+        callback(stats);
     })
 };
 
-function getRequest(URL, callback)
+function getRequest(URL, key = 0, callback)
 {
     https.get(URL, (resp) => {
         let data = '';
@@ -320,7 +550,7 @@ function getRequest(URL, callback)
         });
 
         resp.on('end', () => {
-            callback(data);
+            callback(data, key);
         });
     }).on('error', (err) => {
         console.log(err);

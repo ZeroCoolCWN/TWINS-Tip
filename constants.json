@@ -1,0 +1,4 @@
+{
+    "withdraw_fees"      : 0.01,
+    "deposit_time_limit" : 1200000
+}
