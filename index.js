@@ -435,7 +435,7 @@ Last paid: ${lastpaid}
 function getNewAddress(userid, callback)
 {
     cmd.get(
-        `cd twins/Twins-windows/daemon && twins-cli getnewaddress ${userid}`,
+        `cd twins/Twins-windows/daemon && twins-cli getnewaddress ${userid}`, // Change the path to point to your daemon
         function(err, data, stderr){
             callback(data);
         }
@@ -445,7 +445,7 @@ function getNewAddress(userid, callback)
 function withdrawFund(amount, sendToAddress,callback) 
 {
     cmd.get(
-        `cd twins/Twins-windows/daemon && twins-cli sendtoaddress ${sendToAddress} ${amount}`,
+        `cd twins/Twins-windows/daemon && twins-cli sendtoaddress ${sendToAddress} ${amount}`, // Change the path to point to your daemon
         function(err, data, stderr){
             console.log(err, data, stderr);
             callback({
