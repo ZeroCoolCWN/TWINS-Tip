@@ -1,4 +1,6 @@
 {
-    "withdraw_fees"      : 0.01,
-    "deposit_time_limit" : 1200000
+    "withdraw_fees"              : 0.000226,
+    "deposit_time_limit"         : 1200000, 
+    "UNKNOWN_ERROR"              : "An unknown error occurred. Please try again or contact the admin if the problem exists", 
+    "MENTIONED_USERNAME_UNKNOWN" : "The user mentioned as the reciever of the tip is unknown"
 }
